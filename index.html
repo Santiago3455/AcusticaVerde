@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isolantes Acústicos Escolares: Uma Abordagem Sustentável</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #4B4B4B;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            height: auto;
+            min-height: 350px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .bar-chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            height: auto;
+            min-height: 350px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .nav-link {
+            transition: color 0.3s ease;
+        }
+        .nav-link:hover {
+            color: #D97706; /* amber-600 */
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #D97706;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Animation for elements fading in on scroll */
+        .fade-in-section {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+        }
+        .fade-in-section.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        /* Toast Notification Style */
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s, transform 0.5s;
+        }
+        #toast.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, -10px);
+        }
+        #toast.success { background-color: #22c55e; } /* green-500 */
+        #toast.error { background-color: #ef4444; } /* red-500 */
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Use global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Enable Firestore logging for debugging
+        setLogLevel('debug');
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let currentUserId = null;
+
+        // Function to show toast notifications
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'show';
+            toast.classList.add(type);
+            setTimeout(() => {
+                toast.className = toast.className.replace('show', '');
+            }, 3000);
+        }
+
+        // Listen for authentication state changes
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                console.log("User is signed in with UID:", user.uid);
+                currentUserId = user.uid;
+                document.getElementById('user-id-display').textContent = `Seu ID de Contribuidor: ${currentUserId}`;
+                listenForIdeas(); // Start listening for ideas once authenticated
+            } else {
+                console.log("User is signed out. Attempting to sign in.");
+                // Sign in logic
+                if (initialAuthToken) {
+                    signInWithCustomToken(auth, initialAuthToken).catch(error => {
+                        console.error("Error signing in with custom token:", error);
+                        signInAnonymously(auth).catch(err => console.error("Anonymous sign-in fallback failed:", err));
+                    });
+                } else {
+                    signInAnonymously(auth).catch(err => console.error("Anonymous sign-in failed:", err));
+                }
+            }
+        });
+
+        // Listen for ideas from Firestore in real-time
+        function listenForIdeas() {
+            const ideasCollection = collection(db, `/artifacts/${appId}/public/data/ideias`);
+            const q = query(ideasCollection);
+            const ideasList = document.getElementById('ideias-list');
+            const ideasLoader = document.getElementById('ideias-loader');
+
+            onSnapshot(q, (snapshot) => {
+                ideasLoader.style.display = 'none';
+                ideiasList.innerHTML = ''; // Clear the list before adding new items
+                if (snapshot.empty) {
+                    ideiasList.innerHTML = '<p class="text-gray-500 text-center">Nenhuma ideia ainda. Seja o primeiro a contribuir!</p>';
+                    return;
+                }
+                snapshot.docs.sort((a, b) => b.data().createdAt - a.data().createdAt).forEach(doc => {
+                    const idea = doc.data();
+                    const ideaElement = document.createElement('div');
+                    ideaElement.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200 fade-in-section';
+                    
+                    const date = idea.createdAt ? new Date(idea.createdAt.seconds * 1000).toLocaleString('pt-BR') : 'Data indisponível';
+
+                    ideaElement.innerHTML = `
+                        <p class="text-gray-700">${idea.text}</p>
+                        <p class="text-xs text-gray-400 mt-2">Enviado por: ${idea.userId.substring(0, 8)}... em ${date}</p>
+                    `;
+                    ideiasList.appendChild(ideaElement);
+                });
+                // Re-run animation observer for newly added elements
+                observeSections();
+            }, (error) => {
+                console.error("Error fetching ideas: ", error);
+                ideiasLoader.style.display = 'none';
+                ideiasList.innerHTML = '<p class="text-red-500 text-center">Não foi possível carregar as ideias. Tente recarregar a página.</p>';
+            });
+        }
+
+        // Save an idea to Firestore
+        async function saveIdea(ideaText) {
+            if (!currentUserId) {
+                showToast('Você precisa estar conectado para enviar uma ideia.', 'error');
+                return;
+            }
+            try {
+                await addDoc(collection(db, `/artifacts/${appId}/public/data/ideias`), {
+                    text: ideaText,
+                    userId: currentUserId,
+                    createdAt: serverTimestamp()
+                });
+                showToast('Sua ideia foi enviada com sucesso!', 'success');
+            } catch (error) {
+                console.error("Error adding document: ", error);
+                showToast('Ocorreu um erro ao enviar sua ideia.', 'error');
+            }
+        }
+
+        // Attach event listener after DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            const ideaForm = document.getElementById('idea-form');
+            const ideaInput = document.getElementById('idea-input');
+
+            ideaForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const ideaText = ideaInput.value.trim();
+                if (ideaText) {
+                    saveIdea(ideaText);
+                    ideaInput.value = ''; // Clear the input
+                }
+            });
+        });
+    </script>
+    
+    <div id="toast"></div>
+
+    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-xl font-bold text-amber-700">EcoAcústica</div>
+            <div class="hidden md:flex space-x-8">
+                <a href="#problema" class="nav-link text-gray-600 font-semibold">O Problema</a>
+                <a href="#dados" class="nav-link text-gray-600 font-semibold">Dados</a>
+                <a href="#solucao" class="nav-link text-gray-600 font-semibold">A Solução</a>
+                <a href="#ideias" class="nav-link text-gray-600 font-semibold">Mural de Ideias</a>
+                <a href="#gemini-features" class="nav-link text-gray-600 font-semibold">Inovação ✨</a>
+            </div>
+            <div class="md:hidden">
+                <button id="menu-btn" class="text-gray-600 focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+                </button>
+            </div>
+        </nav>
+        <div id="mobile-menu" class="hidden md:hidden px-6 pb-4">
+            <a href="#problema" class="block py-2 nav-link text-gray-600 font-semibold">O Problema</a>
+            <a href="#dados" class="block py-2 nav-link text-gray-600 font-semibold">Dados</a>
+            <a href="#solucao" class="block py-2 nav-link text-gray-600 font-semibold">A Solução</a>
+            <a href="#ideias" class="block py-2 nav-link text-gray-600 font-semibold">Mural de Ideias</a>
+            <a href="#gemini-features" class="block py-2 nav-link text-gray-600 font-semibold">Inovação ✨</a>
+        </div>
+    </header>
+
+    <main>
+        <section id="inicio" class="py-20 md:py-32 bg-amber-50">
+            <div class="container mx-auto px-6 text-center">
+                <h1 class="text-4xl md:text-6xl font-bold text-amber-800 mb-4 animate-fade-in-down">Silêncio para Aprender</h1>
+                <p class="text-lg md:text-xl max-w-3xl mx-auto text-amber-900 animate-fade-in-up">Desenvolvendo isolantes acústicos sustentáveis e de baixo custo para transformar o ambiente de aprendizado nas escolas.</p>
+            </div>
+        </section>
+
+        <section id="problema" class="py-16 md:py-24 fade-in-section">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">O Ruído Como Barreira Invisível</h2>
+                    <p class="max-w-3xl mx-auto text-lg text-gray-600">O excesso de ruído em salas de aula não é apenas uma distração. Ele afeta diretamente a saúde, a concentração e o desempenho dos alunos, criando um ambiente de aprendizado desigual, especialmente para os mais vulneráveis.</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8 text-center">
+                    <div class="bg-white p-8 rounded-xl shadow-md border border-gray-100 transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+                        <div class="text-4xl mb-4">🧠</div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">Saúde Mental e Física</h3>
+                        <p class="text-gray-600">A exposição contínua a ruídos pode causar estresse, ansiedade e até problemas auditivos, comprometendo o bem-estar geral.</p>
+                    </div>
+                    <div class="bg-white p-8 rounded-xl shadow-md border border-gray-100 transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+                        <div class="text-4xl mb-4">📉</div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">Queda no Desempenho</h3>
+                        <p class="text-gray-600">A dificuldade de concentração impacta a absorção de conteúdo e a performance acadêmica de todos os estudantes.</p>
+                    </div>
+                    <div class="bg-white p-8 rounded-xl shadow-md border border-gray-100 transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+                        <div class="text-4xl mb-4">🧩</div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">Desafios de Inclusão</h3>
+                        <p class="text-gray-600">Alunos com TDAH, ansiedade e outros transtornos são desproporcionalmente afetados, dificultando sua inclusão.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="dados" class="py-16 md:py-24 bg-amber-50 fade-in-section">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">O Que a Comunidade Escolar Pensa?</h2>
+                    <p class="max-w-3xl mx-auto text-lg text-gray-600">Para entender a percepção real do problema, aplicamos um questionário a alunos e funcionários. Os resultados confirmam a urgência de uma solução.</p>
+                </div>
+                <div class="flex flex-wrap justify-center items-start gap-12">
+                    <div class="w-full lg:w-1/3 flex flex-col items-center">
+                        <h3 class="text-xl font-bold text-center text-gray-800 mb-4">Percepção e Apoio à Solução</h3>
+                        <div class="chart-container">
+                            <canvas id="apoioChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="w-full lg:w-1/2 flex flex-col items-center">
+                        <h3 class="text-xl font-bold text-center text-gray-800 mb-4">Prevalência de Transtornos Reportados</h3>
+                         <div class="bar-chart-container">
+                            <canvas id="transtornosChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="solucao" class="py-16 md:py-24 fade-in-section">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">Uma Solução de Triplo Impacto</h2>
+                    <p class="max-w-3xl mx-auto text-lg text-gray-600">Nosso projeto desenvolve um material isolante acústico que ataca o problema em três frentes, tornando a melhoria acústica uma realidade acessível e responsável.</p>
+                </div>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <div class="bg-white p-8 rounded-xl shadow-lg text-center border-t-4 border-green-500 transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+                        <div class="text-4xl mb-4">♻️</div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Ecológica</h3>
+                        <p class="text-gray-600">Composto por materiais recicláveis, reduzindo o desperdício.</p>
+                    </div>
+                    <div class="bg-white p-8 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+                        <div class="text-4xl mb-4">💰</div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Econômica</h3>
+                        <p class="text-gray-600">Alternativa de baixo custo em comparação com os isolantes tradicionais.</p>
+                    </div>
+                    <div class="bg-white p-8 rounded-xl shadow-lg text-center border-t-4 border-blue-500 transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+                        <div class="text-4xl mb-4">🤝</div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Inclusiva</h3>
+                        <p class="text-gray-600">Cria um ambiente de aprendizado mais justo e acolhedor.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section id="ideias" class="py-16 md:py-24 bg-amber-50 fade-in-section">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">Mural de Ideias da Comunidade</h2>
+                    <p class="max-w-3xl mx-auto text-lg text-gray-600">Tem uma sugestão para melhorar ou expandir o projeto? Compartilhe com todos! As melhores ideias podem se tornar parte do futuro da EcoAcústica.</p>
+                    <p id="user-id-display" class="text-sm text-gray-500 mt-2"></p>
+                </div>
+                <div class="max-w-2xl mx-auto">
+                    <form id="idea-form" class="mb-8">
+                        <textarea id="idea-input" rows="4" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500 transition" placeholder="Escreva sua ideia aqui..."></textarea>
+                        <button type="submit" class="mt-4 w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-amber-700 transition duration-300 ease-in-out transform hover:scale-105">
+                            Enviar Ideia
+                        </button>
+                    </form>
+                    <div id="ideias-loader" class="flex justify-center items-center">
+                        <div class="spinner"></div>
+                    </div>
+                    <div id="ideias-list" class="space-y-4">
+                        <!-- Ideias do Firestore serão inseridas aqui -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="gemini-features" class="py-16 md:py-24 fade-in-section">
+            <div class="container mx-auto px-6 text-center">
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">Inovação e Expansão com IA ✨</h2>
+                <p class="max-w-3xl mx-auto text-lg text-gray-600 mb-12">Use o poder da inteligência artificial para explorar novas possibilidades para o projeto. Analise materiais e gere ideias com a API Gemini.</p>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-100 flex flex-col items-center transition-shadow duration-300 hover:shadow-2xl">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4">Expanda Seu Projeto</h3>
+                        <p class="text-gray-600 text-sm mb-4">Onde mais o seu isolante poderia ser usado? Digite um ambiente e gere ideias criativas.</p>
+                        <input type="text" id="ambienteInput" placeholder="Ex: Escritório de coworking" class="w-full md:w-2/3 p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500 mb-4">
+                        <button id="gerarIdeiasBtn" class="bg-amber-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-700 transition duration-300 ease-in-out transform hover:scale-105">
+                            Gerar Ideias ✨
+                        </button>
+                        <div id="ideiasOutput" class="mt-6 p-4 bg-gray-100 rounded-lg w-full text-left text-gray-700 min-h-[100px]"></div>
+                    </div>
+                    <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-100 flex flex-col items-center transition-shadow duration-300 hover:shadow-2xl">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4">Explore Materiais</h3>
+                        <p class="text-gray-600 text-sm mb-4">Qual o potencial de outros materiais recicláveis? Digite um material para descobrir.</p>
+                        <input type="text" id="materialInput" placeholder="Ex: Caixas de papelão" class="w-full md:w-2/3 p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500 mb-4">
+                        <button id="analisarMaterialBtn" class="bg-amber-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-amber-700 transition duration-300 ease-in-out transform hover:scale-105">
+                            Analisar Material ✨
+                        </button>
+                        <div id="analiseOutput" class="mt-6 p-4 bg-gray-100 rounded-lg w-full text-left text-gray-700 min-h-[100px]"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-gray-800 text-white py-8">
+        <div class="container mx-auto px-6 text-center">
+            <h3 class="text-xl font-bold mb-2">Próximos Passos</h3>
+            <p class="max-w-2xl mx-auto mb-4">O futuro é promissor. O protótipo desenvolvido será testado e, futuramente, poderá ser adaptado para outros ambientes, ampliando o impacto positivo do projeto.</p>
+            <p class="text-sm text-gray-400">&copy; 2025 Projeto EcoAcústica. Todos os direitos reservados.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Function to observe sections and add animation class
+        function observeSections() {
+            const sections = document.querySelectorAll('.fade-in-section');
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-visible');
+                    }
+                });
+            }, {
+                threshold: 0.1
+            });
+            sections.forEach(section => {
+                observer.observe(section);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            observeSections();
+
+            const menuBtn = document.getElementById('menu-btn');
+            const mobileMenu = document.getElementById('mobile-menu');
+            const gerarIdeiasBtn = document.getElementById('gerarIdeiasBtn');
+            const ambienteInput = document.getElementById('ambienteInput');
+            const ideiasOutput = document.getElementById('ideiasOutput');
+            const analisarMaterialBtn = document.getElementById('analisarMaterialBtn');
+            const materialInput = document.getElementById('materialInput');
+            const analiseOutput = document.getElementById('analiseOutput');
+
+            menuBtn.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+            
+            const mobileLinks = mobileMenu.querySelectorAll('a');
+            mobileLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    mobileMenu.classList.add('hidden');
+                });
+            });
+
+            const apoioCtx = document.getElementById('apoioChart')?.getContext('2d');
+            if (apoioCtx) {
+                new Chart(apoioCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Acreditam na melhora do desempenho', 'Apoiam a implementação de isolantes'],
+                        datasets: [{
+                            label: 'Apoio da Comunidade',
+                            data: [87.5, 74],
+                            backgroundColor: ['rgba(217, 119, 6, 0.7)', 'rgba(59, 130, 246, 0.7)'],
+                            borderColor: ['rgba(217, 119, 6, 1)', 'rgba(59, 130, 246, 1)'],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { font: { size: 14, family: 'Inter' }, color: '#4B4B4B' } },
+                            tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed}%` } }
+                        }
+                    }
+                });
+            }
+
+            const transtornosCtx = document.getElementById('transtornosChart')?.getContext('2d');
+            if (transtornosCtx) {
+                new Chart(transtornosCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Ansiedade', 'TDAH', 'Depressão'],
+                        datasets: [{
+                            label: '% dos Participantes',
+                            data: [49, 30.8, 10.6],
+                            backgroundColor: ['rgba(239, 68, 68, 0.7)', 'rgba(249, 115, 22, 0.7)', 'rgba(168, 85, 247, 0.7)'],
+                            borderColor: ['rgba(239, 68, 68, 1)', 'rgba(249, 115, 22, 1)', 'rgba(168, 85, 247, 1)'],
+                            borderWidth: 1, borderRadius: 5,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+                        scales: {
+                            x: { beginAtZero: true, grid: { display: false }, ticks: { callback: val => val + '%', color: '#4B4B4B' } },
+                            y: { grid: { display: false }, ticks: { color: '#4B4B4B', font: { size: 14, weight: 'bold' } } }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.x}%` } }
+                        }
+                    }
+                });
+            }
+
+            async function generateWithGemini(prompt) {
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                let response = null;
+                let retries = 0;
+                const maxRetries = 5;
+                const baseDelay = 1000;
+
+                while(retries < maxRetries) {
+                    try {
+                        response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                    } catch (error) {}
+                    retries++;
+                    await new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(2, retries)));
+                }
+
+                if (!response || !response.ok) throw new Error('Falha ao se comunicar com a API do Gemini.');
+                
+                const result = await response.json();
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    return 'Desculpe, não foi possível gerar uma resposta. Tente novamente.';
+                }
+            }
+
+            function setOutput(element, content, isError = false) {
+                if (isError) {
+                    element.innerHTML = `<p class="text-red-500">${content}</p>`;
+                } else if (content.includes('Gerando') || content.includes('Analisando')) {
+                     element.innerHTML = `<div class="flex items-center justify-center space-x-2 h-full"><div class="spinner"></div><span>${content}</span></div>`;
+                } else {
+                    element.innerHTML = `<p>${content}</p>`;
+                }
+            }
+
+            gerarIdeiasBtn.addEventListener('click', async () => {
+                const ambiente = ambienteInput.value.trim();
+                if (ambiente) {
+                    setOutput(ideiasOutput, 'Gerando ideias...');
+                    const prompt = `Imagine que o isolante acústico sustentável, feito de materiais reciclados, será usado em ${ambiente}. Gere um parágrafo criativo descrevendo como ele poderia ser adaptado e o impacto positivo que teria naquele ambiente.`;
+                    try {
+                        const generatedText = await generateWithGemini(prompt);
+                        setOutput(ideiasOutput, generatedText);
+                    } catch (error) {
+                        setOutput(ideiasOutput, `Ocorreu um erro: ${error.message}`, true);
+                    }
+                } else {
+                    setOutput(ideiasOutput, 'Por favor, digite um ambiente para gerar as ideias.');
+                }
+            });
+
+            analisarMaterialBtn.addEventListener('click', async () => {
+                const material = materialInput.value.trim();
+                if (material) {
+                    setOutput(analiseOutput, 'Analisando o material...');
+                    const prompt = `Com base nas propriedades acústicas, qual é o potencial do material ${material} para ser usado como isolante acústico sustentável? Responda com um parágrafo conciso e fácil de entender.`;
+                    try {
+                        const generatedText = await generateWithGemini(prompt);
+                        setOutput(analiseOutput, generatedText);
+                    } catch (error) {
+                        setOutput(analiseOutput, `Ocorreu um erro: ${error.message}`, true);
+                    }
+                } else {
+                    setOutput(analiseOutput, 'Por favor, digite um material para analisar.');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
